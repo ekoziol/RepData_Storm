@@ -1,0 +1,84 @@
+# Analysis of Storm Effects on the United States
+
+# Synopsis
+
+
+# Data Processing
+In order to perform our anaylsis, we must first read in the storm data which covers events from 1950 through November 2011.  We will read in the data into data framed called 'data'. The data can be downloaded from here:  https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2   
+
+Information about the data can be found here:  
+https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf  
+
+```{r}
+data <- read.csv("data/repdata_data_StormData.csv.bz2")
+```
+
+Next we are interested in determining which event types are most harmful to the US population and the US economy.  Let us determine the unique events that occur within the storm data categories.
+
+```{r}
+events <- unique(data$EVTYPE)
+numberOfUniqueEvents <- length(events)
+events
+```
+
+  It appears there are 'r numberOfUniqueEvents' different categories of storm events.  That number does not seem reasonable.  A review of the data shows us that there are many overlapping categories, some spelling errors and mixed wording of categories.  Clearly these areas should be combined.  By the same token, we should determine how many truly unique event types there are.  There are also daily summaries which should be discarded since they are not an actual event type.  There are 48 different event types according to the the Storm Event Table (Section 2.1.1 Table 1).  
+
+  In order to process the data correctly, we need to aggregate and sum the economic and civilian damages of all the events by event type.  The damages also need to be multiplied by the appropriate factor.
+
+  We will then coerce each event type to one of the table values in the Storm Event Table.  First let us find all non-trivial rows.
+
+```{r}
+multiplyDMG <- function(value, ex){
+    if(ex == "K"){
+        return(1e3*value)
+        }
+    
+    else if(ex == "M"){
+        return(1e6*value)
+        } 
+    
+    else if(ex == "B"){
+        return(1e9*value)
+        } 
+    
+    else{
+        return(value)
+        }
+    }
+
+data$ePROPDMG <- mapply(multiplyDMG, data$PROPDMG, data$PROPDMGEXP)
+data$eCROPDMG <- mapply(multiplyDMG, data$CROPDMG, data$CROPDMGEXP)
+    
+df_melt <- melt(data, id=c("EVTYPE"), measure.vars=c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG"))
+eventsCast <- dcast(df_melt, EVTYPE~variable, sum)
+
+nonzero <- eventsCast[(eventsCast$FATALITIES != 0) & (eventsCast$INJURIES != 0) & (eventsCast$ePROPDMG != 0) & (eventsCast$eCROPDMG != 0),]
+
+
+```
+Well there are only 'r nrow(nonzero)' interesting rows of data.  This is much more manageable.  Let us coerce the categories a bit further.  This process will be lengthy since it will involve some manual work.  We only need to combine rows that have the same event type on multiple rows.
+
+```{r}
+# add high winds and dry microburst
+nonzero[nonzero$row.names == 376, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(376, 359, 101),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+
+#add different types of heat together
+nonzero[nonzero$row.names == 130, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(130, 142, 275, 278),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+
+#add different types of extreme cold/ windchill together
+nonzero[nonzero$row.names == 141, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(141, 140, 146),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+
+
+
+actualEvents <- nonzero[nonzero$row.names !%in% c(359, 101, 142, 275, 278, 141, 140, 146),]
+
+```
+
+In order to accurately quantify the crop and property damage amounts we need to scale the numbers according to their dollar factor.  The document defines the factors as follows:
+  Alphabetical characters used to signify magnitude include “K” for thousands, “M” for millions, and “B” for billions.   
+
+
+# Results
+
+
+# Conclusion
