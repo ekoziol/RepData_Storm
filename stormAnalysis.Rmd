@@ -1,7 +1,7 @@
 # Analysis of Storm Effects on the United States
 
 # Synopsis
-
+In this report I aim to show the effect of different types of storm events to both population health and economoy of the United States.  In order to perform this analysis, data storm data from 1950 through November 2011 was obtained from NOAA.  Based on my analysis, the storm types most damaging to population health are tornados and excessive heat.  The storm types most damaging to the economy are flooding, hurricanes, tropical storms, storm surges, ice storms and hail storms.
 
 # Data Processing
 In order to perform our anaylsis, we must first read in the storm data which covers events from 1950 through November 2011.  We will read in the data into data framed called 'data'. The data can be downloaded from here:  https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2   
@@ -9,13 +9,23 @@ In order to perform our anaylsis, we must first read in the storm data which cov
 Information about the data can be found here:  
 https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf  
 
+First load libraries
 ```{r}
+require(lattice)
+require(ggplot2)
+require(reshape2)
+require(gridExtra)
+```
+
+Next load the data
+```{r importData, cache=TRUE}
 data <- read.csv("data/repdata_data_StormData.csv.bz2")
+
 ```
 
 Next we are interested in determining which event types are most harmful to the US population and the US economy.  Let us determine the unique events that occur within the storm data categories.
 
-```{r}
+```{r, cache=TRUE}
 events <- unique(data$EVTYPE)
 numberOfUniqueEvents <- length(events)
 events
@@ -23,11 +33,12 @@ events
 
   It appears there are 'r numberOfUniqueEvents' different categories of storm events.  That number does not seem reasonable.  A review of the data shows us that there are many overlapping categories, some spelling errors and mixed wording of categories.  Clearly these areas should be combined.  By the same token, we should determine how many truly unique event types there are.  There are also daily summaries which should be discarded since they are not an actual event type.  There are 48 different event types according to the the Storm Event Table (Section 2.1.1 Table 1).  
 
-  In order to process the data correctly, we need to aggregate and sum the economic and civilian damages of all the events by event type.  The damages also need to be multiplied by the appropriate factor.
+  In order to process the data correctly, we need to aggregate and sum the economic and civilian damages of all the events by event type. In order to accurately quantify the crop and property damage amounts we need to scale the numbers according to their dollar factor.  The document defines the factors as follows:
+  Alphabetical characters used to signify magnitude include “K” for thousands, “M” for millions, and “B” for billions.    
 
   We will then coerce each event type to one of the table values in the Storm Event Table.  First let us find all non-trivial rows.
 
-```{r}
+```{r, cache=TRUE}
 multiplyDMG <- function(value, ex){
     if(ex == "K"){
         return(1e3*value)
@@ -58,27 +69,85 @@ nonzero <- eventsCast[(eventsCast$FATALITIES != 0) & (eventsCast$INJURIES != 0) 
 ```
 Well there are only 'r nrow(nonzero)' interesting rows of data.  This is much more manageable.  Let us coerce the categories a bit further.  This process will be lengthy since it will involve some manual work.  We only need to combine rows that have the same event type on multiple rows.
 
-```{r}
+```{r, cache=TRUE}
 # add high winds and dry microburst
-nonzero[nonzero$row.names == 376, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(376, 359, 101),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+nonzero[nonzero$EVTYPE == "HIGH WINDS", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("HIGH WINDS", "HIGH WIND", "DRY MICROBURST"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
 
 #add different types of heat together
-nonzero[nonzero$row.names == 130, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(130, 142, 275, 278),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+nonzero[nonzero$EVTYPE == "EXCESSIVE HEAT", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("EXCESSIVE HEAT", "EXTREME HEAT", "HEAT", "HEAT WAVE"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
 
 #add different types of extreme cold/ windchill together
-nonzero[nonzero$row.names == 141, c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")] <- lapply(nonzero[nonzero$row.names %in% c(141, 140, 146),c("FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")], sum)
+nonzero[nonzero$EVTYPE == "EXTREME COLD/WIND CHILL", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("EXTREME COLD/WIND CHILL", "EXTREME COLD", "EXTREME WINDCHILL"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
 
+#Add different flash floods together
+nonzero[nonzero$EVTYPE == "FLASH FLOOD", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("FLASH FLOOD", "FLASH FLOODING", "FLOOD/FLASH FLOOD"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
 
+#Add different flooding together
+nonzero[nonzero$EVTYPE == "FLOOD", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("FLOOD", "FLOODING", "RIVER FLOOD"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
 
-actualEvents <- nonzero[nonzero$row.names !%in% c(359, 101, 142, 275, 278, 141, 140, 146),]
+#Add different strong winds together
+nonzero[nonzero$EVTYPE == "STRONG WIND", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("STRONG WIND", "STRONG WINDS", "GUSTY WINDS", "GUSTY WIND", "WIND", "WINDS"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different heavy rain together
+nonzero[nonzero$EVTYPE == "HEAVY RAIN", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("HEAVY RAIN", "URBAN/SML STREAM FLD"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different heavy snow together
+nonzero[nonzero$EVTYPE == "HEAVY SNOW", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("HEAVY SNOW", "SNOW"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different hurricanes together
+nonzero[nonzero$EVTYPE == "HURRICANE", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("HURRICANE", "HURRICANE ERIN", "HURRICANE OPAL", "HURRICANE/TYPHOON"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different thunderstorms together
+nonzero[nonzero$EVTYPE == "THUNDERSTORM WIND", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("THUNDERSTORM WIND", "THUNDERSTORM WINDS", "THUNDERSTORM", "TSTM WIND", "TSTM WIND/HAIL"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different storm surge/tide together
+nonzero[nonzero$EVTYPE == "STORM SURGE/TIDE", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("STORM SURGE/TIDE", "STORM SURGE"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different tropical storms together
+nonzero[nonzero$EVTYPE == "TROPICAL STORM", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("TROPICAL STORM", "TROPICAL STORM/GORDON"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different wildfires together
+nonzero[nonzero$EVTYPE == "WILDFIRE", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("WILDFIRE", "WILD/FOREST FIRE"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+#Add different winter storms together
+nonzero[nonzero$EVTYPE == "WINTER STORM", c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")] <- lapply(nonzero[nonzero$EVTYPE %in% c("WINTER STORM", "WINTER STORMS", "WINTER STORM HIGH WINDS"),c("FATALITIES", "INJURIES", "ePROPDMG", "eCROPDMG")], sum)
+
+actualEvents <- nonzero[!(nonzero$EVTYPE %in% c("EXTREME HEAT", "HEAT", "HEAT WAVE", "EXTREME COLD", "EXTREME WINDCHILL", "HIGH WIND", "DRY MICROBURST","FLASH FLOODING", "FLOOD/FLASH FLOOD","FLOODING", "RIVER FLOOD", "STRONG WINDS", "GUSTY WINDS", "GUSTY WIND", "WIND", "WINDS", "URBAN/SML STREAM FLD", "SNOW", "HURRICANE ERIN", "HURRICANE OPAL", "HURRICANE/TYPHOON","THUNDERSTORM WINDS", "THUNDERSTORM", "TSTM WIND", "TSTM WIND/HAIL", "STORM SURGE", "TROPICAL STORM/GORDON","WILD/FOREST FIRE", "WINTER STORMS", "WINTER STORM HIGH WINDS")),]
+
 
 ```
 
-In order to accurately quantify the crop and property damage amounts we need to scale the numbers according to their dollar factor.  The document defines the factors as follows:
-  Alphabetical characters used to signify magnitude include “K” for thousands, “M” for millions, and “B” for billions.   
+The data is now processed into the aggregated events.
 
 
 # Results
+We will first examine the events that cause the most amount of personal damage.  Personal damage is defined as the direct result of storm events resulting in either fatalities or injuries to people.
+<<plot1>>=
+```{r}
+eF <- qplot(y=FATALITIES, x=EVTYPE, data=actualEvents, stat="identity", geom="bar", position="dodge", xlab = "") + theme(axis.text.x = element_text(angle=-60, hjust=0)) + geom_text(aes(x=EVTYPE, y=FATALITIES, label=FATALITIES, vjust=-0.2)) + ggtitle("Personal Damage Caused by Storm Events") + theme(plot.title = element_text(lineheight=1, face="bold"))
 
+eI <- qplot(y=INJURIES, x=EVTYPE, data=actualEvents, stat="identity", geom="bar", position="dodge", xlab="Event Type") + theme(axis.text.x = element_text(angle=-60, hjust=0)) + geom_text(aes(x=EVTYPE, y=INJURIES, label=INJURIES, vjust=-0.2))
+
+grid.arrange(eF, eI)
+```
+  
+  As can be seen in the plot above, tornados and excessive heat are most harmful storm types to the population health.
+  
+  We will next examine the events that cause the most amount of economic damage.  Economic damage is defined as the direct result of storm events resulting in either damage to crops or property.
+
+```{r}
+
+eP <- qplot(y=ePROPDMG, x=EVTYPE, data=actualEvents, stat="identity", geom="bar", position="dodge", xlab = "", ylab = "Property Damage ($)") + theme(axis.text.x = element_text(angle=-60, hjust=0)) + geom_text(aes(x=EVTYPE, y=ePROPDMG, label=ePROPDMG, vjust=-0.2)) + ggtitle("Economic Damage Caused by Storm Events") + theme(plot.title = element_text(lineheight=1, face="bold"))
+
+eC <- qplot(y=eCROPDMG, x=EVTYPE, data=actualEvents, stat="identity", geom="bar", position="dodge", xlab="Event Type", ylab="Crop Damage ($)") + theme(axis.text.x = element_text(angle=-60, hjust=0)) + geom_text(aes(x=EVTYPE, y=eCROPDMG, label=eCROPDMG, vjust=-0.2))
+
+#grid.arrange(eP, eC)
+grid.draw(rbind(ggplotGrob(eP), ggplotGrob(eC), size="last"))
+
+```
+As seen in the plot above, the storm types most damaging to the economy are flooding, hurricanes, tropical storms, storm surges, ice storms and hail storms.
 
 # Conclusion
+In order to lessen the damage caused to the populice by storms the following is recommended:
+ 1.  Develop houses which can resist high wind and impact events such as those caused during tornados and hurricanes. 
+ 2.  Improve watershed and flood protection system in order to quickly displace rising waters before they affect both crops and property.
